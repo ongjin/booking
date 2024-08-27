@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
-import { BookingModule } from './booking/booking.module';
+import { BookingModule } from '@/zeroWorld/booking.module';
 import { ScheduleModule } from '@nestjs/schedule';
-import { BookingService } from './booking/booking.service';
+import { BookingService } from '@/zeroWorld/booking.service';
 
 @Module({
     imports: [
