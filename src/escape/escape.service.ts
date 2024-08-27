@@ -1,65 +1,72 @@
 import { Injectable } from '@nestjs/common';
 import * as puppeteer from 'puppeteer';
-import { CreateBookingDto } from './dto/create-booking.dto';
-import { FormatDateUtil } from '../utils/format-date.util';
-import { SelectDateUtil } from '../utils/select-date.util';
-import { SelectThemeUtil } from '../utils/select-theme.util';
-import { SelectTimeUtil } from '../utils/select-time.util';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { CreateEscapeDto } from './dto/create-escape.dto';
+import { SelectShopUtil } from './utils/select-shop.utils';
+import { SelectDateUtil } from './utils/select-date.utils';
+import { SelectThemeUtil } from './utils/select-theme.utils';
+import { SelectTimeUtil } from './utils/select-time.utils';
 
 @Injectable()
-export class BookingService {
+export class EscapeService {
     private readonly maxDelay = Number.MAX_SAFE_INTEGER; // Extremely long delay
     constructor(
-        private readonly formatDateUtil: FormatDateUtil,
+        private readonly selectShopUtil: SelectShopUtil,
         private readonly selectDateUtil: SelectDateUtil,
         private readonly selectThemeUtil: SelectThemeUtil,
         private readonly selectTimeUtil: SelectTimeUtil,
     ) { }
 
     // async onModuleInit() {
-    //     console.log('BookingService initialized, starting initial booking...');
-    //     await this.handleScheduledBookings();
+    //     console.log('EscapeService initialized, starting initial Escape...');
+    //     await this.handleScheduledEscapes();
     // }
 
-    @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT) // Runs every day at midnight
-    async handleScheduledBookings() {
-        const reservations: CreateBookingDto[] = [
-            {
-                url: "http://www.zerogangnam.com",
-                themeName: "나비",
-                date: "2024-09-04",
-                time: "16~22",
-                name: "조용진",
-                phone: "01057663821",
-                people: "3"
-            },
-            {
-                url: "http://www.zerogangnam.com",
-                themeName: "겨울",
-                date: "2024-09-04",
-                time: "10~18",
-                name: "이소영",
-                phone: "01057663821",
-                people: "3"
-            }
-        ];
 
-        await this.bookMultiple(reservations);
+    private async findAvailableDate(page: puppeteer.Page, targetTimestamp: number) {
+        const dates = await page.$$('.day');
+
+        for (const date of dates) {
+            const dateValue = await date.evaluate(el => el.getAttribute('data-date'));
+            const isDisabled = await date.evaluate(el => el.classList.contains('disabled'));
+
+            if (Number(dateValue) === targetTimestamp && !isDisabled) {
+                return date;
+            }
+        }
+
+        return null;
     }
-    async bookTicket(reservation: CreateBookingDto): Promise<void> {
-        const { url, date, themeName, time, name, phone, people } = reservation;
+
+    private convertDateToTimestamp(dateStr: string): number {
+        // 날짜가 '2024-08-27' 또는 '20240827' 형식으로 주어질 수 있으므로 이를 파싱하여 Date 객체로 변환
+        let year: number, month: number, day: number;
+
+        if (dateStr.includes('-')) {
+            [year, month, day] = dateStr.split('-').map(Number);
+        } else {
+            year = Number(dateStr.slice(0, 4));
+            month = Number(dateStr.slice(4, 6));
+            day = Number(dateStr.slice(6, 8));
+        }
+
+        // Date 객체를 생성하고 해당 객체를 타임스탬프로 변환
+        const date = new Date(Date.UTC(year, month - 1, day));
+        return date.getTime();
+    }
+
+    async bookTicket(reservation: CreateEscapeDto): Promise<void> {
+        const { url, shopName, date, themeName, time, name, phone, people } = reservation;
 
         // 예약 시작 시간 기록
         const startTime = Date.now();
-        const maxRetries = 10;
+        const maxRetries = 1;
         let attempt = 0;
 
         while (attempt < maxRetries) {
             attempt++
 
             const browser = await puppeteer.launch({
-                headless: true,
+                headless: false,
                 args: [
                     '--no-sandbox',
                     '--disable-setuid-sandbox',
@@ -84,10 +91,10 @@ export class BookingService {
                 }
             });
 
-            page.on('dialog', async (dialog) => {
-                console.log(`Dialog message: ${dialog.message()}`);
-                await dialog.dismiss();
-            });
+            // page.on('dialog', async (dialog) => {
+            //     console.log(`Dialog message: ${dialog.message()}`);
+            //     await dialog.dismiss();
+            // });
 
             page.on('error', (err) => {
                 console.error('Page error:', err);
@@ -98,19 +105,9 @@ export class BookingService {
             });
 
             try {
-                // await page.goto(url);
-                // await page.goto(url, { waitUntil: 'networkidle0' });
                 // URL에 타임스탬프 추가하여 캐시를 방지하고 항상 새로운 요청처럼 보이도록 위장
-                const urlWithTimestamp = `${reservation.url}?t=${Date.now()}`;
+                const urlWithTimestamp = `${url}?t=${Date.now()}`;
                 await page.goto(urlWithTimestamp, { waitUntil: 'networkidle2' });
-
-                // 팝업 창 닫기
-                // await page.waitForSelector('#wrap > div > div > div > button.evePopupCloseBtn');
-                // await page.click('#wrap > div > div > div > button.evePopupCloseBtn');
-                const popupCloseBtnSelector = '#wrap > div > div > div > button.evePopupCloseBtn';
-                if (await page.$(popupCloseBtnSelector)) {
-                    await page.click(popupCloseBtnSelector);
-                }
 
                 // "예약" 텍스트를 포함하는 요소를 찾아 클릭
                 // await page.$$eval('a', (elements) => {
@@ -121,18 +118,20 @@ export class BookingService {
                 //         }
                 //     });
                 // });
-                await page.waitForSelector('#nav > div > ul > li:nth-child(3)');
-                await page.click('#nav > div > ul > li:nth-child(3)');
+                // 예약페이지로 이동
+                await page.waitForSelector('#navbarCollapse > ul > li:nth-child(3)');
+                await page.click('#navbarCollapse > ul > li:nth-child(3)');
 
+                // 매장선택
+                await this.selectShopUtil.selectShop(page, shopName)
 
                 // 날짜 선택
-                const [year, month, day] = this.formatDateUtil.formatDate(date, 'YYYY-MM-DD').split('-');
-                await this.selectDateUtil.selectDate(page, year, month, day);
+                await this.selectDateUtil.selectDate(page, date)
 
-                // 테마 선택
-                await this.selectThemeUtil.selectTheme(page, themeName);
+                // 테마선택
+                await this.selectThemeUtil.selectTheme(page, themeName)
 
-                // 시간 선택
+                // 시간대 선택
                 let timeResult = '';
                 if (time.includes('~')) {
                     timeResult = await this.selectTimeUtil.selectTime(page, time, true);
@@ -140,21 +139,13 @@ export class BookingService {
                     timeResult = await this.selectTimeUtil.selectTime(page, time);
                 }
 
-                // 'NEXT' 버튼 클릭
-                await page.waitForSelector('#nextBtn');
-                await page.click('#nextBtn');
-
                 // 이름 입력
-                await page.waitForSelector('input[name="name"]');
-                await page.type('input[name="name"]', name);
-
-                // 핸드폰 번호 입력
-                // await page.waitForSelector('input[name="phone"]');
-                await page.type('input[name="phone"]', phone);
+                // await page.waitForSelector('#name');
+                await page.type('#name', name);
 
                 // 인원 선택
                 // await page.waitForSelector('select[name="people"]');
-                const peopleOptions = await page.$$('select[name="people"] option');
+                const peopleOptions = await page.$$('#custom-form-0 option');
 
                 for (const option of peopleOptions) {
                     const value = await option.evaluate((el) =>
@@ -166,29 +157,28 @@ export class BookingService {
                     }
                 }
 
-                // 약관 동의 체크박스 선택
-                await page.waitForSelector('div.step2-policy.ta-c > label');
-                await page.click('div.step2-policy.ta-c > label');
+                // 연락처 입력
+                await page.type('#phone-number', phone);
 
                 // 예약 버튼 클릭
-                // await page.waitForSelector("#reservationBtn");
-                // await page.click("#reservationBtn");
+                await page.waitForSelector("#submit-booking");
+                await page.click("#submit-booking");
 
                 // 예약 완료 메시지 로그
                 console.log(`예약 완료: ${name} ${timeResult} ${themeName}`);
                 break; // 성공했을 경우 루프를 종료
             } catch (error) {
-                console.error(`Error during booking for ${time}:`, error);
+                console.error(`Error during Escape for ${time}:`, error);
                 if (attempt >= maxRetries) {
-                    console.error('Max retries reached. Booking failed.');
+                    console.error('Max retries reached. Escape failed.');
                     throw error;
                 }
                 console.log('retry...');
                 await this.delay(500); // 0.5초 대기
             } finally {
                 try {
-                    if (page) await page.close(); // 페이지 닫기
-                    if (browser) await browser.close(); // 브라우저 닫기
+                    // if (page) await page.close(); // 페이지 닫기
+                    // if (browser) await browser.close(); // 브라우저 닫기
                 } catch (closeError) {
                     console.error('Error closing page or browser:', closeError);
                 }
@@ -206,7 +196,7 @@ export class BookingService {
         return new Promise((resolve) => setTimeout(resolve, ms));
     }
 
-    async bookMultiple(reservations: CreateBookingDto[]): Promise<void> {
+    async bookMultiple(reservations: CreateEscapeDto[]): Promise<void> {
         if (!reservations || !Array.isArray(reservations)) {
             throw new Error("Missing or invalid 'reservations' array.");
         }

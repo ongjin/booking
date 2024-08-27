@@ -8,4 +8,4 @@ import { SelectTimeUtil } from './select-time.util';
     providers: [FormatDateUtil, SelectDateUtil, SelectThemeUtil, SelectTimeUtil],
     exports: [FormatDateUtil, SelectDateUtil, SelectThemeUtil, SelectTimeUtil],
 })
-export class UtilsModule { }
+export class ZeroWorldUtilsModule { }
