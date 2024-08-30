@@ -1,19 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import * as puppeteer from 'puppeteer';
 import { CreateEscapeDto } from './dto/create-escape.dto';
-import { SelectShopUtil } from './utils/select-shop.utils';
-import { SelectDateUtil } from './utils/select-date.utils';
-import { SelectThemeUtil } from './utils/select-theme.utils';
-import { SelectTimeUtil } from './utils/select-time.utils';
+import { PuppeteerService } from '@/module/puppeteer/puppeteer.service';
+import { DateUtil } from '@/utils/date.util';
 
 @Injectable()
 export class EscapeService {
     private readonly maxDelay = Number.MAX_SAFE_INTEGER; // Extremely long delay
     constructor(
-        private readonly selectShopUtil: SelectShopUtil,
-        private readonly selectDateUtil: SelectDateUtil,
-        private readonly selectThemeUtil: SelectThemeUtil,
-        private readonly selectTimeUtil: SelectTimeUtil,
+        private readonly puppeteerService: PuppeteerService,
+        private readonly formatDateUtil: DateUtil
     ) { }
 
     // async onModuleInit() {
@@ -21,8 +17,51 @@ export class EscapeService {
     //     await this.handleScheduledEscapes();
     // }
 
+    // 시간 선택 메서드
+    async selectTime(page: puppeteer.Page, time: string, isRange = false): Promise<string> {
+        await page.waitForSelector('#slot-table > tr');
+        const timeSlots = await page.$$('#slot-table > tr');
 
+        if (isRange) {
+            const [start, end] = time.split('~').map((t) => t.trim());
+            const minTime = this.formatDateUtil.escapeParseTimeString(this.formatDateUtil.normalizeTime(start));
+            const maxTime = this.formatDateUtil.escapeParseTimeString(this.formatDateUtil.normalizeTime(end));
+
+            for (const slot of timeSlots) {
+                const isReserved = await slot.evaluate((el) => el.classList.contains('disabled'));
+                if (isReserved) continue;
+
+                const slotTime = await slot.evaluate(el => el.querySelector('td').textContent.trim());
+                const slotTimeInMinutes = this.formatDateUtil.escapeParseTimeString(slotTime);
+
+                if (slotTimeInMinutes >= minTime && slotTimeInMinutes <= maxTime) {
+                    await slot.click();
+                    return slotTime;
+                }
+            }
+            throw new Error(`No available time found between ${start} and ${end}.`);
+        } else {
+            const normalizedTime = this.formatDateUtil.normalizeTime(time);
+
+            for (const slot of timeSlots) {
+                const isReserved = await slot.evaluate((el) => el.classList.contains('disabled'));
+                if (isReserved) continue;
+
+                const slotTime = await slot.evaluate(el => el.querySelector('td').textContent.trim());
+
+                if (slotTime.includes(time)) {
+                    await slot.click();
+                    return slotTime;
+                }
+            }
+            throw new Error(`Time "${time}" 예약 불가능.`);
+        }
+    }
+
+    /** 날짜선택 */
     private async findAvailableDate(page: puppeteer.Page, targetTimestamp: number) {
+        await page.waitForSelector('.day'); // 요소가 로드될 때까지 기다림
+
         const dates = await page.$$('.day');
 
         for (const date of dates) {
@@ -36,24 +75,61 @@ export class EscapeService {
 
         return null;
     }
+    async selectDate(page: puppeteer.Page, date: string): Promise<string> {
+        const targetTimestamp = this.formatDateUtil.convertDateToTimestamp(date);
 
-    private convertDateToTimestamp(dateStr: string): number {
-        // 날짜가 '2024-08-27' 또는 '20240827' 형식으로 주어질 수 있으므로 이를 파싱하여 Date 객체로 변환
-        let year: number, month: number, day: number;
-
-        if (dateStr.includes('-')) {
-            [year, month, day] = dateStr.split('-').map(Number);
-        } else {
-            year = Number(dateStr.slice(0, 4));
-            month = Number(dateStr.slice(4, 6));
-            day = Number(dateStr.slice(6, 8));
+        while (true) {
+            const availableDate = await this.findAvailableDate(page, targetTimestamp);
+            if (availableDate) {
+                await availableDate.click();
+                return date; // 날짜를 성공적으로 선택하면 함수 종료
+            } else {
+                const nextButton = await page.$('#datepicker .next');
+                if (nextButton) {
+                    await nextButton.click();
+                    // await page.waitForTimeout(1000); // 다음 달로 넘어가고 페이지가 로드될 시간을 확보
+                } else {
+                    throw new Error(`다음달 없음`);
+                }
+            }
         }
-
-        // Date 객체를 생성하고 해당 객체를 타임스탬프로 변환
-        const date = new Date(Date.UTC(year, month - 1, day));
-        return date.getTime();
     }
 
+    /** 지점선택 */
+    async selectShop(page: puppeteer.Page, shopName: string): Promise<string> {
+        await page.waitForSelector('#shop-table > tr > td > div > span');
+        // 모든 지점 span 요소 가져오기
+        const shopElements = await page.$$('#shop-table > tr > td > div > span');
+        // 각 지점 요소를 순회하면서 이름을 비교
+        for (const shopElement of shopElements) {
+            const shopText = await shopElement.evaluate((el) => el.textContent.trim());
+
+            // 입력된 지점 이름과 일치하는 경우 클릭
+            if (shopText.includes(shopName)) {
+                await shopElement.click();
+                return shopText
+            }
+        }
+        throw new Error(`${shopName} not found`);
+    }
+
+    /** 테마선택 */
+    async selectTheme(page: puppeteer.Page, themeName: string): Promise<string> {
+        await page.waitForSelector('#theme-table > tr > td > div');
+        const themeLabels = await page.$$('#theme-table > tr > td > div');
+
+        for (const label of themeLabels) {
+            const themeText = await label.evaluate((el) => el.textContent.trim());
+
+            if (themeText.includes(themeName)) {
+                await label.click();
+                return themeText
+            }
+        }
+        throw new Error(`${themeName} not found`);
+    }
+
+    /** 예매 */
     async bookTicket(reservation: CreateEscapeDto): Promise<void> {
         const { url, shopName, date, themeName, time, name, phone, people } = reservation;
 
@@ -64,79 +140,38 @@ export class EscapeService {
 
         while (attempt < maxRetries) {
             attempt++
-
-            const browser = await puppeteer.launch({
-                headless: false,
-                args: [
-                    '--no-sandbox',
-                    '--disable-setuid-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-accelerated-2d-canvas',
-                    '--disable-gpu',
-                    '--window-size=1920,1080',
-                    '--no-zygote', // 초기화 프로세스를 생략하여 속도 향상
-                ],
-            });
-            const page = await browser.newPage();
-            page.setViewport({ width: 1920, height: 1080 });
-
-            await page.setRequestInterception(true);
-
-            page.on('request', (req) => {
-                const resourceType = req.resourceType();
-                if (['image'].includes(resourceType)) {
-                    req.abort();
-                } else {
-                    req.continue();
-                }
-            });
-
-            // page.on('dialog', async (dialog) => {
-            //     console.log(`Dialog message: ${dialog.message()}`);
-            //     await dialog.dismiss();
-            // });
-
-            page.on('error', (err) => {
-                console.error('Page error:', err);
-            });
-
-            page.on('pageerror', (pageErr) => {
-                console.error('Page script error:', pageErr);
-            });
-
+            const browser = await this.puppeteerService.launchBrowser();
+            const page = await this.puppeteerService.setupPage(browser);
             try {
+                // alert confirm 조절
+                // page.on('dialog', async (dialog) => {
+                //     console.log(`Dialog message: ${dialog.message()}`);
+                //     await dialog.dismiss();
+                // });
+
                 // URL에 타임스탬프 추가하여 캐시를 방지하고 항상 새로운 요청처럼 보이도록 위장
                 const urlWithTimestamp = `${url}?t=${Date.now()}`;
                 await page.goto(urlWithTimestamp, { waitUntil: 'networkidle2' });
 
-                // "예약" 텍스트를 포함하는 요소를 찾아 클릭
-                // await page.$$eval('a', (elements) => {
-                //     elements.forEach((element) => {
-                //         if (element.textContent.includes('예약')) {
-                //             element.click();
-                //             return true;
-                //         }
-                //     });
-                // });
                 // 예약페이지로 이동
                 await page.waitForSelector('#navbarCollapse > ul > li:nth-child(3)');
                 await page.click('#navbarCollapse > ul > li:nth-child(3)');
 
                 // 매장선택
-                await this.selectShopUtil.selectShop(page, shopName)
+                const shopNameValue = await this.selectShop(page, shopName)
 
                 // 날짜 선택
-                await this.selectDateUtil.selectDate(page, date)
+                const dateValue = await this.selectDate(page, date)
 
                 // 테마선택
-                await this.selectThemeUtil.selectTheme(page, themeName)
+                const themeNameValue = await this.selectTheme(page, themeName)
 
                 // 시간대 선택
                 let timeResult = '';
                 if (time.includes('~')) {
-                    timeResult = await this.selectTimeUtil.selectTime(page, time, true);
+                    timeResult = await this.selectTime(page, time, true);
                 } else {
-                    timeResult = await this.selectTimeUtil.selectTime(page, time);
+                    timeResult = await this.selectTime(page, time);
                 }
 
                 // 이름 입력
@@ -165,7 +200,7 @@ export class EscapeService {
                 await page.click("#submit-booking");
 
                 // 예약 완료 메시지 로그
-                console.log(`예약 완료: ${name} ${timeResult} ${themeName}`);
+                console.log(`예약 완료: ${name} ${shopNameValue} ${dateValue} ${timeResult} ${themeNameValue}`);
                 break; // 성공했을 경우 루프를 종료
             } catch (error) {
                 console.error(`Error during Escape for ${time}:`, error);
@@ -177,8 +212,8 @@ export class EscapeService {
                 await this.delay(500); // 0.5초 대기
             } finally {
                 try {
-                    // if (page) await page.close(); // 페이지 닫기
-                    // if (browser) await browser.close(); // 브라우저 닫기
+                    if (page) await page.close(); // 페이지 닫기
+                    if (browser) await browser.close(); // 브라우저 닫기
                 } catch (closeError) {
                     console.error('Error closing page or browser:', closeError);
                 }

@@ -1,13 +1,12 @@
 import { Module, ValidationPipe } from '@nestjs/common';
-import { BookingModule } from '@/zeroWorld/zeroWorld.module';
+import { ZeroWorldModule } from '@/zeroWorld/zeroWorld.module';
 import { ScheduleModule } from '@nestjs/schedule';
-import { BookingService } from '@/zeroWorld/zeroWorld.service';
 import { EscapeModule } from './escape/escape.module';
 import { APP_PIPE } from '@nestjs/core';
 
 @Module({
     imports: [
-        BookingModule,
+        ZeroWorldModule,
         EscapeModule,
         ScheduleModule.forRoot()
     ],

@@ -1,10 +1,10 @@
 import { Controller, Post, Body } from '@nestjs/common';
-import { BookingService } from './zeroWorld.service';
+import { ZeroWorldService } from './zeroWorld.service';
 import { CreateBookingDto } from './dto/create-zeroWorld.dto';
 
 @Controller('zero-world')
-export class BookingController {
-    constructor(private readonly bookingService: BookingService) { }
+export class ZeroWorldController {
+    constructor(private readonly bookingService: ZeroWorldService) { }
 
     @Post('reservation')
     async create(@Body('reservations') reservations: CreateBookingDto[]) {

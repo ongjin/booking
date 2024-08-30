@@ -1,20 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import * as puppeteer from 'puppeteer';
 import { CreateBookingDto } from './dto/create-zeroWorld.dto';
-import { FormatDateUtil } from './utils/format-date.util';
-import { SelectDateUtil } from './utils/select-date.util';
-import { SelectThemeUtil } from './utils/select-theme.util';
-import { SelectTimeUtil } from './utils/select-time.util';
+import { DateUtil } from '../utils/date.util';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { PuppeteerService } from '@/module/puppeteer/puppeteer.service';
 
 @Injectable()
-export class BookingService {
+export class ZeroWorldService {
     private readonly maxDelay = Number.MAX_SAFE_INTEGER; // Extremely long delay
     constructor(
-        private readonly formatDateUtil: FormatDateUtil,
-        private readonly selectDateUtil: SelectDateUtil,
-        private readonly selectThemeUtil: SelectThemeUtil,
-        private readonly selectTimeUtil: SelectTimeUtil,
+        private readonly puppeteerService: PuppeteerService,
+        private readonly formatDateUtil: DateUtil,
     ) { }
 
     // async onModuleInit() {
@@ -47,6 +43,124 @@ export class BookingService {
 
         await this.bookMultiple(reservations);
     }
+
+    /** 시간선택 */
+    async selectTime(page: puppeteer.Page, time: string, isRange = false): Promise<string> {
+        await page.waitForSelector('#themeTimeWrap > label');
+        const timeLabels = await page.$$('#themeTimeWrap > label');
+
+        if (isRange) {
+            const [start, end] = time.split('~').map((t) => t.trim());
+            const minTime = this.formatDateUtil.zeroWorldParseTimeString(start);
+            const maxTime = this.formatDateUtil.zeroWorldParseTimeString(end);
+
+
+            for (const label of timeLabels) {
+                const isReserved = await label.evaluate((el) =>
+                    el.classList.contains('active'),
+                );
+                if (isReserved) continue;
+
+                const labelText = await label.evaluate((el) => el.textContent.trim());
+                const labelTime = this.formatDateUtil.zeroWorldParseTimeString(labelText);
+
+                if (labelTime >= minTime && labelTime <= maxTime) {
+                    await label.click();
+                    return labelText;
+                }
+            }
+            throw new Error(`No available time found between ${start} and ${end}.`);
+        } else {
+            const timeString = time.includes('시') ? time : `${time}시`;
+
+            for (const label of timeLabels) {
+                const isReserved = await label.evaluate((el) =>
+                    el.classList.contains('active'),
+                );
+                if (isReserved) continue;
+
+                const labelText = await label.evaluate((el) => el.textContent.trim());
+                if (labelText.includes(timeString)) {
+                    await label.click();
+                    return labelText;
+                }
+            }
+            throw new Error(`Time "${time}"시 예약 꽉참`);
+        }
+    }
+
+    /** 테마선택 */
+    async selectTheme(page: puppeteer.Page, themeName): Promise<void> {
+        await page.waitForSelector('#themeChoice > label');
+        const themeLabels = await page.$$('#themeChoice > label');
+
+        for (const label of themeLabels) {
+            const labelText = await label.evaluate((el) => el.textContent.trim());
+            if (labelText.includes(themeName)) {
+                await label.click();
+                return;
+            }
+        }
+        throw new Error(`Theme "${themeName}" not found.`);
+    }
+
+    /** 날짜선택 */
+    async selectDate(page: puppeteer.Page, year, month, day): Promise<void> {
+        let dateFound = false;
+        const adjustedDay = day.startsWith('0') ? day.substring(1) : day;
+
+        let attempts = 0;
+        const maxAttempts = 12;
+
+        while (!dateFound && attempts < maxAttempts) {
+            attempts++;
+
+            const dates = await page.$$('#calendar [data-year][data-month][data-date]');
+
+            for (const element of dates) {
+                const elementYear = await element.evaluate((el) =>
+                    el.getAttribute('data-year'),
+                );
+                const elementMonth = await element.evaluate((el) =>
+                    el.getAttribute('data-month'),
+                );
+                const elementDate = await element.evaluate((el) =>
+                    el.getAttribute('data-date'),
+                );
+                const isDisabled = await element.evaluate((el) =>
+                    el.classList.contains('-disabled-'),
+                );
+
+                if (
+                    parseInt(elementYear) === parseInt(year) &&
+                    parseInt(elementMonth) === parseInt(month) - 1 &&
+                    parseInt(elementDate) === parseInt(adjustedDay) &&
+                    !isDisabled
+                ) {
+                    await element.click();
+                    dateFound = true;
+                    break;
+                }
+            }
+
+            if (!dateFound) {
+                await page.waitForSelector('[data-action="next"]');
+                const nextButton = await page.$('[data-action="next"]');
+                if (nextButton) {
+                    await nextButton.click();
+                } else {
+                    throw new Error(`다음 달로 이동할 수 없습니다.`);
+                }
+            }
+        }
+
+        if (!dateFound) {
+            throw new Error(
+                `Date "${year}-${month}-${day}" not found or is disabled after ${maxAttempts} attempts.`,
+            );
+        }
+    }
+
     async bookTicket(reservation: CreateBookingDto): Promise<void> {
         const { url, date, themeName, time, name, phone, people } = reservation;
 
@@ -57,47 +171,16 @@ export class BookingService {
 
         while (attempt < maxRetries) {
             attempt++
-
-            const browser = await puppeteer.launch({
-                headless: true,
-                args: [
-                    '--no-sandbox',
-                    '--disable-setuid-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-accelerated-2d-canvas',
-                    '--disable-gpu',
-                    '--window-size=1920,1080',
-                    '--no-zygote', // 초기화 프로세스를 생략하여 속도 향상
-                ],
-            });
-            const page = await browser.newPage();
-            page.setViewport({ width: 1920, height: 1080 });
-
-            await page.setRequestInterception(true);
-
-            page.on('request', (req) => {
-                const resourceType = req.resourceType();
-                if (['image'].includes(resourceType)) {
-                    req.abort();
-                } else {
-                    req.continue();
-                }
-            });
-
-            page.on('dialog', async (dialog) => {
-                console.log(`Dialog message: ${dialog.message()}`);
-                await dialog.dismiss();
-            });
-
-            page.on('error', (err) => {
-                console.error('Page error:', err);
-            });
-
-            page.on('pageerror', (pageErr) => {
-                console.error('Page script error:', pageErr);
-            });
-
+            const browser = await this.puppeteerService.launchBrowser();
+            const page = await this.puppeteerService.setupPage(browser);
             try {
+
+
+                page.on('dialog', async (dialog) => {
+                    console.log(`Dialog message: ${dialog.message()}`);
+                    await dialog.dismiss();
+                });
+
                 // await page.goto(url);
                 // await page.goto(url, { waitUntil: 'networkidle0' });
                 // URL에 타임스탬프 추가하여 캐시를 방지하고 항상 새로운 요청처럼 보이도록 위장
@@ -127,17 +210,17 @@ export class BookingService {
 
                 // 날짜 선택
                 const [year, month, day] = this.formatDateUtil.formatDate(date, 'YYYY-MM-DD').split('-');
-                await this.selectDateUtil.selectDate(page, year, month, day);
+                await this.selectDate(page, year, month, day);
 
                 // 테마 선택
-                await this.selectThemeUtil.selectTheme(page, themeName);
+                await this.selectTheme(page, themeName);
 
                 // 시간 선택
                 let timeResult = '';
                 if (time.includes('~')) {
-                    timeResult = await this.selectTimeUtil.selectTime(page, time, true);
+                    timeResult = await this.selectTime(page, time, true);
                 } else {
-                    timeResult = await this.selectTimeUtil.selectTime(page, time);
+                    timeResult = await this.selectTime(page, time);
                 }
 
                 // 'NEXT' 버튼 클릭
@@ -175,7 +258,7 @@ export class BookingService {
                 // await page.click("#reservationBtn");
 
                 // 예약 완료 메시지 로그
-                console.log(`예약 완료: ${name} ${timeResult} ${themeName}`);
+                console.log(`제로월드 예약 완료: ${name} ${timeResult} ${themeName}`);
                 break; // 성공했을 경우 루프를 종료
             } catch (error) {
                 console.error(`Error during booking for ${time}:`, error);

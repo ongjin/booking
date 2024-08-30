@@ -1,11 +1,12 @@
 import { Module } from '@nestjs/common';
-import { BookingService } from './zeroWorld.service';
-import { ZeroWorldUtilsModule } from '@/zeroWorld/utils/utils.module';
-import { BookingController } from './zeroWorld.controller';
+import { ZeroWorldService } from './zeroWorld.service';
+import { UtilsModule } from '@/utils/utils.module';
+import { ZeroWorldController } from './zeroWorld.controller';
+import { PuppeteerService } from '@/module/puppeteer/puppeteer.service';
 
 @Module({
-    imports: [ZeroWorldUtilsModule],
-    providers: [BookingService],
-    controllers: [BookingController],
+    imports: [UtilsModule],
+    providers: [ZeroWorldService, PuppeteerService],
+    controllers: [ZeroWorldController],
 })
-export class BookingModule { }
+export class ZeroWorldModule { }

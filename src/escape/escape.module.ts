@@ -1,11 +1,13 @@
 import { Module } from '@nestjs/common';
 import { EscapeService } from './escape.service';
 import { EscapeController } from './escape.controller';
-import { EscapeUtilsModule } from './utils/utils.module';
+import { PuppeteerModule } from '@/module/puppeteer/puppeteer.module';
+import { DateUtil } from '@/utils/date.util';
+
 
 @Module({
-    imports: [EscapeUtilsModule],
-    providers: [EscapeService],
+    imports: [PuppeteerModule],
+    providers: [EscapeService, DateUtil],
     controllers: [EscapeController],
 })
 export class EscapeModule { }
