@@ -20,38 +20,36 @@ export class EscapeService {
     // 시간 선택 메서드
     async selectTime(page: puppeteer.Page, time: string, isRange = false): Promise<string> {
         await page.waitForSelector('#slot-table > tr');
-        const timeSlots = await page.$$('#slot-table > tr');
+        const timeLabels = await page.$$('#slot-table > tr');
 
         if (isRange) {
             const [start, end] = time.split('~').map((t) => t.trim());
-            const minTime = this.formatDateUtil.escapeParseTimeString(this.formatDateUtil.normalizeTime(start));
-            const maxTime = this.formatDateUtil.escapeParseTimeString(this.formatDateUtil.normalizeTime(end));
+            const minTime = this.formatDateUtil.escapeParseTimeString(start);
+            const maxTime = this.formatDateUtil.escapeParseTimeString(end);
 
-            for (const slot of timeSlots) {
-                const isReserved = await slot.evaluate((el) => el.classList.contains('disabled'));
+            for (const label of timeLabels) {
+                const isReserved = await label.evaluate((el) => el.classList.contains('disabled'));
+
                 if (isReserved) continue;
 
-                const slotTime = await slot.evaluate(el => el.querySelector('td').textContent.trim());
-                const slotTimeInMinutes = this.formatDateUtil.escapeParseTimeString(slotTime);
+                const labelText = await label.evaluate(el => el.querySelector('td').textContent.trim());
+                const labelTime = this.formatDateUtil.escapeParseTimeString(labelText);
 
-                if (slotTimeInMinutes >= minTime && slotTimeInMinutes <= maxTime) {
-                    await slot.click();
-                    return slotTime;
+                if (labelTime >= minTime && labelTime <= maxTime) {
+                    await label.click();
+                    return labelText;
                 }
             }
             throw new Error(`No available time found between ${start} and ${end}.`);
         } else {
-            const normalizedTime = this.formatDateUtil.normalizeTime(time);
-
-            for (const slot of timeSlots) {
-                const isReserved = await slot.evaluate((el) => el.classList.contains('disabled'));
+            for (const label of timeLabels) {
+                const isReserved = await label.evaluate((el) => el.classList.contains('disabled'));
                 if (isReserved) continue;
 
-                const slotTime = await slot.evaluate(el => el.querySelector('td').textContent.trim());
-
-                if (slotTime.includes(time)) {
-                    await slot.click();
-                    return slotTime;
+                const labelText = await label.evaluate(el => el.querySelector('td').textContent.trim());
+                if (labelText.includes(time)) {
+                    await label.click();
+                    return labelText;
                 }
             }
             throw new Error(`Time "${time}" 예약 불가능.`);
@@ -60,9 +58,8 @@ export class EscapeService {
 
     /** 날짜선택 */
     private async findAvailableDate(page: puppeteer.Page, targetTimestamp: number) {
-        await page.waitForSelector('.day'); // 요소가 로드될 때까지 기다림
-
-        const dates = await page.$$('.day');
+        await page.waitForSelector('#datepicker .day'); // 요소가 로드될 때까지 기다림
+        const dates = await page.$$('#datepicker .day');
 
         for (const date of dates) {
             const dateValue = await date.evaluate(el => el.getAttribute('data-date'));
@@ -77,20 +74,29 @@ export class EscapeService {
     }
     async selectDate(page: puppeteer.Page, date: string): Promise<string> {
         const targetTimestamp = this.formatDateUtil.convertDateToTimestamp(date);
+        let attempts = 0;
+        const maxAttempts = 12;
 
-        while (true) {
-            const availableDate = await this.findAvailableDate(page, targetTimestamp);
-            if (availableDate) {
-                await availableDate.click();
-                return date; // 날짜를 성공적으로 선택하면 함수 종료
-            } else {
-                const nextButton = await page.$('#datepicker .next');
-                if (nextButton) {
-                    await nextButton.click();
-                    // await page.waitForTimeout(1000); // 다음 달로 넘어가고 페이지가 로드될 시간을 확보
+        while (attempts < maxAttempts) {
+            attempts++;
+            try {
+                const availableDate = await this.findAvailableDate(page, targetTimestamp);
+                if (availableDate) {
+                    await availableDate.click();
+                    return date; // 날짜를 성공적으로 선택하면 함수 종료
                 } else {
-                    throw new Error(`다음달 없음`);
+                    const nextButton = await page.$('#datepicker .next');
+                    if (nextButton) {
+                        await nextButton.click();
+                        // await page.waitForTimeout(1000); // 다음 달로 넘어가고 페이지가 로드될 시간을 확보
+                    } else {
+                        throw new Error(`다음달 없음`);
+                    }
                 }
+            } catch (error) {
+                // console.error('Error selecting date:', error);
+                throw Error('Error selecting date: ' + error)
+                continue
             }
         }
     }

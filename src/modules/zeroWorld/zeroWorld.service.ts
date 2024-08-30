@@ -50,15 +50,13 @@ export class ZeroWorldService {
         const timeLabels = await page.$$('#themeTimeWrap > label');
 
         if (isRange) {
-            const [start, end] = time.split('~').map((t) => t.trim());
+            const [start, end] = time.trim().split('~').map((t) => t.trim());
             const minTime = this.formatDateUtil.zeroWorldParseTimeString(start);
             const maxTime = this.formatDateUtil.zeroWorldParseTimeString(end);
 
 
             for (const label of timeLabels) {
-                const isReserved = await label.evaluate((el) =>
-                    el.classList.contains('active'),
-                );
+                const isReserved = await label.evaluate((el) => el.classList.contains('active'));
                 if (isReserved) continue;
 
                 const labelText = await label.evaluate((el) => el.textContent.trim());
@@ -71,16 +69,12 @@ export class ZeroWorldService {
             }
             throw new Error(`No available time found between ${start} and ${end}.`);
         } else {
-            const timeString = time.includes('시') ? time : `${time}시`;
-
             for (const label of timeLabels) {
-                const isReserved = await label.evaluate((el) =>
-                    el.classList.contains('active'),
-                );
+                const isReserved = await label.evaluate((el) => el.classList.contains('active'));
                 if (isReserved) continue;
 
                 const labelText = await label.evaluate((el) => el.textContent.trim());
-                if (labelText.includes(timeString)) {
+                if (labelText.includes(time)) {
                     await label.click();
                     return labelText;
                 }
@@ -90,7 +84,7 @@ export class ZeroWorldService {
     }
 
     /** 테마선택 */
-    async selectTheme(page: puppeteer.Page, themeName): Promise<void> {
+    async selectTheme(page: puppeteer.Page, themeName): Promise<string> {
         await page.waitForSelector('#themeChoice > label');
         const themeLabels = await page.$$('#themeChoice > label');
 
@@ -98,14 +92,14 @@ export class ZeroWorldService {
             const labelText = await label.evaluate((el) => el.textContent.trim());
             if (labelText.includes(themeName)) {
                 await label.click();
-                return;
+                return labelText;
             }
         }
         throw new Error(`Theme "${themeName}" not found.`);
     }
 
     /** 날짜선택 */
-    async selectDate(page: puppeteer.Page, year, month, day): Promise<void> {
+    async selectDate(page: puppeteer.Page, year, month, day): Promise<string> {
         let dateFound = false;
         const adjustedDay = day.startsWith('0') ? day.substring(1) : day;
 
@@ -118,18 +112,10 @@ export class ZeroWorldService {
             const dates = await page.$$('#calendar [data-year][data-month][data-date]');
 
             for (const element of dates) {
-                const elementYear = await element.evaluate((el) =>
-                    el.getAttribute('data-year'),
-                );
-                const elementMonth = await element.evaluate((el) =>
-                    el.getAttribute('data-month'),
-                );
-                const elementDate = await element.evaluate((el) =>
-                    el.getAttribute('data-date'),
-                );
-                const isDisabled = await element.evaluate((el) =>
-                    el.classList.contains('-disabled-'),
-                );
+                const elementYear = await element.evaluate((el) => el.getAttribute('data-year'));
+                const elementMonth = await element.evaluate((el) => el.getAttribute('data-month'));
+                const elementDate = await element.evaluate((el) => el.getAttribute('data-date'));
+                const isDisabled = await element.evaluate((el) => el.classList.contains('-disabled-'));
 
                 if (
                     parseInt(elementYear) === parseInt(year) &&
@@ -139,7 +125,7 @@ export class ZeroWorldService {
                 ) {
                     await element.click();
                     dateFound = true;
-                    break;
+                    return `${year}-${month}-${day}`
                 }
             }
 

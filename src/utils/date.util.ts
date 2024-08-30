@@ -13,7 +13,7 @@ export class DateUtil {
     }
 
     escapeParseTimeString(timeString: string): number {
-        const [hours, minutes] = timeString.split(':').map(Number);
+        const [hours, minutes] = timeString.trim().split(':').map(Number);
         return hours * 60 + (minutes ? minutes : 0);
     }
 
@@ -22,8 +22,9 @@ export class DateUtil {
             .replace('시', '')
             .replace('분', '')
             .trim()
-            .split(' ');
-        return parseInt(hours) * 60 + (minutes ? parseInt(minutes) : 0);
+            .split(' ')
+            .map(Number)
+        return hours * 60 + (minutes ? minutes : 0);
     }
 
     // 시간 문자열을 "14시" 또는 "14:00" 형식으로 표준화
