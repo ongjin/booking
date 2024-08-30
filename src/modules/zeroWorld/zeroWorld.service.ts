@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import * as puppeteer from 'puppeteer';
 import { CreateBookingDto } from './dto/create-zeroWorld.dto';
-import { DateUtil } from '../utils/date.util';
+import { DateUtil } from '@/utils/date.util';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { PuppeteerService } from '@/module/puppeteer/puppeteer.service';
+import { PuppeteerService } from '@/modules/puppeteer/puppeteer.service';
 
 @Injectable()
 export class ZeroWorldService {

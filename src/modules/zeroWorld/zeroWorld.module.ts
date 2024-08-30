@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { ZeroWorldService } from './zeroWorld.service';
 import { UtilsModule } from '@/utils/utils.module';
 import { ZeroWorldController } from './zeroWorld.controller';
-import { PuppeteerService } from '@/module/puppeteer/puppeteer.service';
+import { PuppeteerService } from '@/modules/puppeteer/puppeteer.service';
 
 @Module({
     imports: [UtilsModule],

@@ -1,7 +1,7 @@
 import { Module, ValidationPipe } from '@nestjs/common';
-import { ZeroWorldModule } from '@/zeroWorld/zeroWorld.module';
+import { ZeroWorldModule } from '@/modules/zeroWorld/zeroWorld.module';
 import { ScheduleModule } from '@nestjs/schedule';
-import { EscapeModule } from './escape/escape.module';
+import { EscapeModule } from '@/modules/escape/escape.module';
 import { APP_PIPE } from '@nestjs/core';
 
 @Module({

@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { EscapeService } from './escape.service';
 import { EscapeController } from './escape.controller';
-import { PuppeteerModule } from '@/module/puppeteer/puppeteer.module';
+import { PuppeteerModule } from '@/modules/puppeteer/puppeteer.module';
 import { DateUtil } from '@/utils/date.util';
 
 

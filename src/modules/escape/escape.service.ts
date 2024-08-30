@@ -1,12 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import * as puppeteer from 'puppeteer';
 import { CreateEscapeDto } from './dto/create-escape.dto';
-import { PuppeteerService } from '@/module/puppeteer/puppeteer.service';
+import { PuppeteerService } from '@/modules/puppeteer/puppeteer.service';
 import { DateUtil } from '@/utils/date.util';
 
 @Injectable()
 export class EscapeService {
-    private readonly maxDelay = Number.MAX_SAFE_INTEGER; // Extremely long delay
+    private readonly maxDelay = Number.MAX_SAFE_INTEGER;
     constructor(
         private readonly puppeteerService: PuppeteerService,
         private readonly formatDateUtil: DateUtil
