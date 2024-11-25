@@ -45,4 +45,16 @@ export class DateUtil {
         const date = new Date(Date.UTC(year, month - 1, day));
         return date.getTime();
     }
+
+    convertToKST(serverTime: string): string {
+        // 서버 시간 문자열을 Date 객체로 변환
+        const utcDate = new Date(serverTime);
+
+        // UTC 시간을 KST로 변환 (+9시간)
+        const kstOffset = 9 * 60; // 9시간 * 60분
+        const kstDate = new Date(utcDate.getTime() + kstOffset * 60 * 1000);
+
+        // 한국 시간 형식으로 반환
+        return kstDate.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+    }
 }

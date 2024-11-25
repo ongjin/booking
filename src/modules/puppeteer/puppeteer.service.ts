@@ -49,7 +49,8 @@ export class PuppeteerService {
         await page.setRequestInterception(true);
         page.on('request', (req) => {
             const resourceType = req.resourceType();
-            if (['image'].includes(resourceType)) {
+            // if (['image'].includes(resourceType)) {
+            if (['image', 'font'].includes(resourceType)) {
                 req.abort();
             } else {
                 req.continue();

@@ -27,7 +27,7 @@ export class ZeroWorldService {
                 date: "2024-09-04",
                 time: "16~22",
                 name: "조용진",
-                phone: "01057663821",
+                phone: "010-5766-3821",
                 people: "3"
             },
             {
@@ -99,7 +99,7 @@ export class ZeroWorldService {
     }
 
     /** 날짜선택 */
-    async selectDate(page: puppeteer.Page, year, month, day): Promise<string> {
+    async selectDate(page: puppeteer.Page, year: String, month: String, day: String): Promise<string> {
         let dateFound = false;
         const adjustedDay = day.startsWith('0') ? day.substring(1) : day;
 
@@ -109,7 +109,8 @@ export class ZeroWorldService {
         while (!dateFound && attempts < maxAttempts) {
             attempts++;
 
-            const dates = await page.$$('#calendar [data-year][data-month][data-date]');
+            await page.waitForSelector('#calendar [data-year][data-month][data-date]'); // 달력 요소가 로드되었는지 기다림
+            const dates = await page.$$(`#calendar [data-year][data-month][data-date]`);
 
             for (const element of dates) {
                 const elementYear = await element.evaluate((el) => el.getAttribute('data-year'));
@@ -118,9 +119,9 @@ export class ZeroWorldService {
                 const isDisabled = await element.evaluate((el) => el.classList.contains('-disabled-'));
 
                 if (
-                    parseInt(elementYear) === parseInt(year) &&
-                    parseInt(elementMonth) === parseInt(month) - 1 &&
-                    parseInt(elementDate) === parseInt(adjustedDay) &&
+                    parseInt(elementYear) === parseInt(year.toString()) &&
+                    parseInt(elementMonth) === parseInt(month.toString()) - 1 &&
+                    parseInt(elementDate) === parseInt(adjustedDay.toString()) &&
                     !isDisabled
                 ) {
                     await element.click();
@@ -147,12 +148,14 @@ export class ZeroWorldService {
         }
     }
 
+
     async bookTicket(reservation: CreateBookingDto): Promise<void> {
         const { url, date, themeName, time, name, phone, people } = reservation;
 
         // 예약 시작 시간 기록
         const startTime = Date.now();
-        const maxRetries = 10;
+        // 최대 재시도 횟수
+        const maxRetries = 1;
         let attempt = 0;
 
         while (attempt < maxRetries) {
@@ -171,7 +174,10 @@ export class ZeroWorldService {
                 // await page.goto(url, { waitUntil: 'networkidle0' });
                 // URL에 타임스탬프 추가하여 캐시를 방지하고 항상 새로운 요청처럼 보이도록 위장
                 const urlWithTimestamp = `${url}?t=${Date.now()}`;
-                await page.goto(urlWithTimestamp, { waitUntil: 'networkidle2' });
+                // await page.goto(urlWithTimestamp, { waitUntil: 'networkidle2' });
+                const response = await page.goto(urlWithTimestamp, { waitUntil: 'domcontentloaded', timeout: 30000 });
+                const serverTime = response.headers()['date'];
+                
 
                 // 팝업 창 닫기
                 // await page.waitForSelector('#wrap > div > div > div > button.evePopupCloseBtn');
@@ -239,9 +245,10 @@ export class ZeroWorldService {
                 await page.waitForSelector('div.step2-policy.ta-c > label');
                 await page.click('div.step2-policy.ta-c > label');
 
+
                 // 예약 버튼 클릭
-                // await page.waitForSelector("#reservationBtn");
-                // await page.click("#reservationBtn");
+                await page.waitForSelector("#reservationBtn");
+                await page.click("#reservationBtn");
 
                 // 예약 완료 메시지 로그
                 console.log(`제로월드 예약 완료: ${name} ${timeResult} ${themeName}`);
